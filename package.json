@@ -1,0 +1,38 @@
+{
+  "name": "ubuntu-toolbox",
+  "version": "1.0.0",
+  "description": "一個功能豐富的 Ubuntu 系統管理工具集",
+  "main": "toolbox",
+  "scripts": {
+    "install": "bash install.sh",
+    "uninstall": "bash uninstall.sh",
+    "test": "bash toolbox --help"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phdassice/ubuntu-toolbox.git"
+  },
+  "keywords": [
+    "ubuntu",
+    "toolbox",
+    "system",
+    "administration",
+    "docker",
+    "monitoring",
+    "network",
+    "speedtest",
+    "linux"
+  ],
+  "author": "phdassice",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/phdassice/ubuntu-toolbox/issues"
+  },
+  "homepage": "https://github.com/phdassice/ubuntu-toolbox#readme",
+  "os": [
+    "linux"
+  ],
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
