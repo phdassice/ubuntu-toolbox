@@ -1,0 +1,31 @@
+# 測試文件
+speedtest_result_*.txt
+
+# 日誌文件
+*.log
+
+# 備份文件
+*.backup
+*.bak
+
+# 臨時文件
+*.tmp
+*.temp
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node.js (如果使用)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
