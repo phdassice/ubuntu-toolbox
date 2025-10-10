@@ -2,14 +2,14 @@
 
 # Ubuntu Toolbox - 系統管理工具集
 # 作者: phdassice
-# 版本: 1.0.0
+# 版本: 1.1.1
 
 set -e
 
 # 更新配置
 UPDATE_CHECK_URL="https://api.github.com/repos/phdassice/ubuntu-toolbox/releases/latest"
 SCRIPT_URL="https://raw.githubusercontent.com/phdassice/ubuntu-toolbox/main/toolbox"
-LOCAL_VERSION="1.1.0"
+LOCAL_VERSION="1.1.1"
 UPDATE_CHECK_FILE="$HOME/.ubuntu-toolbox-update-check"
 
 # 顏色定義
