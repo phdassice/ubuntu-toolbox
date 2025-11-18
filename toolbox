@@ -386,22 +386,93 @@ system_status() {
     read -p "按任意鍵返回主菜單..." -n1 -s
 }
 
-# 檢查 speedtest-cli 是否安裝
+# 檢查 speedtest 是否安裝（已改為優先安裝官方 Ookla speedtest）
 check_speedtest() {
-    if ! command -v speedtest-cli &> /dev/null; then
-        echo -e "${YELLOW}speedtest-cli 未安裝，正在安裝...${NC}"
-        if command -v apt &> /dev/null; then
-            sudo apt update && sudo apt install -y speedtest-cli
-        elif command -v yum &> /dev/null; then
-            sudo yum install -y speedtest-cli
-        elif command -v pip3 &> /dev/null; then
-            pip3 install speedtest-cli
+    # 如果已安裝官方 ookla speedtest 或 speedtest-cli，直接返回
+    if command -v speedtest &> /dev/null; then
+        return 0
+    fi
+    if command -v speedtest-cli &> /dev/null; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}speedtest 未安裝，嘗試使用 Ookla 官方安裝流程...${NC}"
+
+    # 必須是 Debian/Ubuntu 類系統才能使用下列 apt 流程
+    if ! command -v apt-get &> /dev/null; then
+        echo -e "${YELLOW}系統似乎不是 Debian/Ubuntu 類型，改嘗試安裝 speedtest-cli 作為備援${NC}"
+        # 嘗試使用 pip3 安裝 speedtest-cli
+        if command -v pip3 &> /dev/null; then
+            echo -e "${YELLOW}正在使用 pip3 安裝 speedtest-cli...${NC}"
+            if pip3 install --user speedtest-cli; then
+                echo -e "${GREEN}安裝完成（使用者層）: speedtest-cli${NC}"
+                return 0
+            else
+                echo -e "${RED}pip3 安裝 speedtest-cli 失敗${NC}"
+                return 1
+            fi
         else
-            echo -e "${RED}無法自動安裝 speedtest-cli，請手動安裝${NC}"
+            echo -e "${RED}無法自動安裝 speedtest，請手動安裝${NC}"
             return 1
         fi
     fi
-    return 0
+
+    # 使用 sudo 執行需要的 apt 命令
+    SUDO=""
+    if [ "$EUID" -ne 0 ]; then
+        SUDO="sudo"
+    fi
+
+    # 移除舊的 apt source（若存在）
+    if [[ -f /etc/apt/sources.list.d/speedtest.list ]]; then
+        echo -e "${YELLOW}移除舊的 /etc/apt/sources.list.d/speedtest.list${NC}"
+        $SUDO rm -f /etc/apt/sources.list.d/speedtest.list || true
+    fi
+
+    echo -e "${YELLOW}更新 apt 並移除可能的衝突套件（若存在）...${NC}"
+    $SUDO apt-get update -qq || true
+    $SUDO apt-get remove -y speedtest speedtest-cli || true
+
+    echo -e "${YELLOW}確保 curl 與必要套件已安裝...${NC}"
+    $SUDO apt-get update -qq
+    $SUDO apt-get install -y -qq curl apt-transport-https ca-certificates gnupg || true
+
+    echo -e "${YELLOW}從 packagecloud 註冊 Ookla 的 repository 並安裝 speedtest...${NC}"
+    # 使用 -sSf：在網路錯誤時會讓 curl 返回非零
+    if curl -sSf https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | $SUDO bash; then
+        $SUDO apt-get update -qq
+        if $SUDO apt-get install -y -qq speedtest; then
+            echo -e "${GREEN}✓ 已安裝官方 Ookla speedtest${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}官方安裝步驟失敗，嘗試安裝 community speedtest-cli 作為備援${NC}"
+        fi
+    else
+        echo -e "${YELLOW}無法註冊 packagecloud repository（網路或權限問題），嘗試備援安裝${NC}"
+    fi
+
+    # 備援：嘗試 apt-get 安裝 speedtest-cli (某些發行版的套件名不同) 或 pip3
+    if $SUDO apt-get install -y -qq speedtest-cli; then
+        echo -e "${GREEN}✓ 已透過 apt 安裝 speedtest-cli（備援）${NC}"
+        return 0
+    fi
+
+    if command -v pip3 &> /dev/null; then
+        echo -e "${YELLOW}使用 pip3 安裝 speedtest-cli（備援）...${NC}"
+        if pip3 install --user speedtest-cli; then
+            echo -e "${GREEN}✓ 已使用 pip3 安裝 speedtest-cli（備援）${NC}"
+            return 0
+        else
+            echo -e "${RED}pip3 安裝 speedtest-cli 失敗${NC}"
+        fi
+    fi
+
+    echo -e "${RED}✗ 無法自動安裝 speedtest，請檢查網路或手動安裝（建議使用 Ookla 官方方式）${NC}"
+    echo -e "${BLUE}官方安裝步驟參考:${NC}"
+    echo -e "${BLUE}sudo apt-get install curl${NC}"
+    echo -e "${BLUE}curl -s https://packagecloud.io/install/repositories/ookla/speedtest-cli/script.deb.sh | sudo bash${NC}"
+    echo -e "${BLUE}sudo apt-get install speedtest${NC}"
+    return 1
 }
 
 # 網路速度測試
@@ -409,51 +480,88 @@ network_speed_test() {
     show_header
     echo -e "${BLUE}=== 網路速度測試 ===${NC}"
     echo
-    
+
     if ! check_speedtest; then
         echo
         read -p "按任意鍵返回主菜單..." -n1 -s
         return
     fi
-    
+
+    # 決定要呼叫的二進位（優先官方 speedtest，否則 speedtest-cli）
+    local BIN=""
+    if command -v speedtest &> /dev/null; then
+        BIN="speedtest"
+    elif command -v speedtest-cli &> /dev/null; then
+        BIN="speedtest-cli"
+    else
+        echo -e "${RED}找不到 speedtest 可執行檔${NC}"
+        return
+    fi
+
     echo -e "${YELLOW}正在測試網路速度，請稍候...${NC}"
     echo -e "${CYAN}這可能需要幾分鐘時間${NC}"
     echo
-    
-    # 顯示測試進度
-    echo -e "${YELLOW}正在選擇最佳測試伺服器...${NC}"
-    
-    # 執行速度測試
-    speedtest_result=$(speedtest-cli --simple 2>/dev/null)
-    
-    if [ $? -eq 0 ]; then
+
+    # 執行速度測試（嘗試 --simple 模式，若失敗再以預設執行）
+    speedtest_result=""
+    if $BIN --simple 2>/dev/null | tee /tmp/speedtest_output.$$ >/dev/null; then
+        speedtest_result=$(cat /tmp/speedtest_output.$$)
+        rm -f /tmp/speedtest_output.$$
+    else
+        # 若 --simple 失敗，嘗試不加參數執行（某些版本需要互動同意）
+        if $BIN 2>/tmp/speedtest_output.$$ >/dev/null; then
+            speedtest_result=$(cat /tmp/speedtest_output.$$)
+            rm -f /tmp/speedtest_output.$$
+        else
+            # 最後的嘗試：直接執行並捕獲錯誤輸出供診斷
+            speedtest_result=$($BIN 2>&1 || true)
+        fi
+    fi
+
+    if [[ -z "$speedtest_result" ]]; then
+        echo -e "${RED}✗ 網路速度測試未產生輸出，可能執行失敗${NC}"
+        echo -e "${YELLOW}請嘗試手動執行: sudo $BIN 或 $BIN --help 取得更多資訊${NC}"
+        echo
+        read -p "按任意鍵返回主菜單..." -n1 -s
+        return
+    fi
+
+    # 嘗試解析 Ping/Download/Upload（同時支援 speedtest 和 speedtest-cli 的輸出格式）
+    ping=$(echo "$speedtest_result" | grep -E "Ping:|Latency:" | head -1 | awk '{print $2 " " $3}' || true)
+    download=$(echo "$speedtest_result" | grep -E "Download:|Download Speed:" | head -1 | awk '{print $2 " " $3}' || true)
+    upload=$(echo "$speedtest_result" | grep -E "Upload:|Upload Speed:" | head -1 | awk '{print $2 " " $3}' || true)
+
+    if [[ -n "$ping" || -n "$download" || -n "$upload" ]]; then
         echo -e "${GREEN}✓ 網路速度測試完成！${NC}"
         echo
         echo -e "${BLUE}📊 測試結果:${NC}"
         echo "════════════════════════════════════════"
-        
-        # 解析結果
-        ping=$(echo "$speedtest_result" | grep "Ping:" | awk '{print $2 " " $3}')
-        download=$(echo "$speedtest_result" | grep "Download:" | awk '{print $2 " " $3}')
-        upload=$(echo "$speedtest_result" | grep "Upload:" | awk '{print $2 " " $3}')
-        
-        echo -e "${CYAN}延遲 (Ping):     ${YELLOW}$ping${NC}"
-        echo -e "${CYAN}下載速度:        ${GREEN}$download${NC}"
-        echo -e "${CYAN}上傳速度:        ${GREEN}$upload${NC}"
+        echo -e "${CYAN}延遲 (Ping):     ${YELLOW}${ping:-'無資料'}${NC}"
+        echo -e "${CYAN}下載速度:        ${GREEN}${download:-'無資料'}${NC}"
+        echo -e "${CYAN}上傳速度:        ${GREEN}${upload:-'無資料'}${NC}"
         echo
-        
-        # 速度評估
-        download_mbps=$(echo "$download" | awk '{print $1}')
-        if (( $(echo "$download_mbps > 100" | bc -l) )); then
-            echo -e "${GREEN}🚀 網路速度很棒！${NC}"
-        elif (( $(echo "$download_mbps > 50" | bc -l) )); then
-            echo -e "${YELLOW}⚡ 網路速度良好${NC}"
-        elif (( $(echo "$download_mbps > 25" | bc -l) )); then
-            echo -e "${YELLOW}📶 網路速度普通${NC}"
+
+        # 嘗試從下載速度字串擷取數值（Mbps）
+        download_mbps=$(echo "$download" | awk '{print $1}' 2>/dev/null || echo "")
+        # 若單位是以 M 或 Mbps 假設為 Mbps；若是 K 則轉換
+        if [[ -n "$download_mbps" ]]; then
+            # 若帶有非數字，移除
+            download_mbps=$(echo "$download_mbps" | sed 's/[^0-9.]//g')
         else
+            download_mbps=0
+        fi
+
+        # 速度評估（若 parse 出來的數值為 0，則不顯示評估）
+        if (( $(echo "$download_mbps > 100" | bc -l 2>/dev/null || echo 0) )); then
+            echo -e "${GREEN}🚀 網路速度很棒！${NC}"
+        elif (( $(echo "$download_mbps > 50" | bc -l 2>/dev/null || echo 0) )); then
+            echo -e "${YELLOW}⚡ 網路速度良好${NC}"
+        elif (( $(echo "$download_mbps > 25" | bc -l 2>/dev/null || echo 0) )); then
+            echo -e "${YELLOW}📶 網路速度普通${NC}"
+        elif (( $(echo "$download_mbps > 0" | bc -l 2>/dev/null || echo 0) )); then
             echo -e "${RED}🐌 網路速度較慢${NC}"
         fi
-        
+
         echo
         echo -e "${BLUE}是否要保存測試結果到文件？${NC}"
         read -p "[y/N]: " save_result
@@ -469,10 +577,13 @@ network_speed_test() {
             echo -e "${GREEN}✓ 結果已保存到: $result_file${NC}"
         fi
     else
-        echo -e "${RED}✗ 網路速度測試失敗${NC}"
-        echo -e "${YELLOW}請檢查網路連接後重試${NC}"
+        echo -e "${RED}✗ 無法解析測試結果，原始輸出如下：${NC}"
+        echo "$speedtest_result"
+        echo
+        echo -e "${YELLOW}提示: 若你剛安裝的是 Ookla 官方 speedtest，可能需要同意授權或 GDPR 條款，請手動執行:${NC}"
+        echo -e "${BLUE}sudo speedtest --accept-license --accept-gdpr${NC}"
     fi
-    
+
     echo
     read -p "按任意鍵返回主菜單..." -n1 -s
 }
